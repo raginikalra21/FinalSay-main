@@ -235,7 +235,7 @@ _DATE_RE_SRC = (
     rf"\b(?:\d{{1,2}}\s+{_MONTHS}(?:\s+\d{{4}})?"
     rf"|{_MONTHS}\s+\d{{1,2}}(?:,?\s+\d{{4}})?"
     r"|\d{4}-\d{2}-\d{2}"
-    r"|\d{1,2}/\d{1,2}/\d{2,4})\b"
+    r"|\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b"
 )
 _DATE_RE = re.compile(_DATE_RE_SRC, re.IGNORECASE)
 
@@ -251,7 +251,7 @@ _ISSUER_RE = re.compile(
 # "extended to" must be immediately followed by a date to count.
 _DEADLINE_EXPLICIT_RE = re.compile(
     r"(?:deadline|due date|due|last date(?:\s+of\s+\w+)?|closes?(?:\s+on)?|cutoff)"
-    r"\s*(?:is|:|-)?\s*(.+?)(?:\.|\n|$)",
+    r"\s*(?:is|:|-)?\s*(.+?)(?:\.(?!\d)|\n|$)",
     re.IGNORECASE,
 )
 # "by <date>" / "extended to <date>" / "before <date>" — but NOT "Issued by".

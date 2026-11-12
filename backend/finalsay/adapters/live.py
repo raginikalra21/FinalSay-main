@@ -193,7 +193,20 @@ class PublicSiteClient:
         except (URLError, TimeoutError, OSError) as exc:
             raise SourceFetchError(f"request failed: {exc}") from exc
         with response:
-            body = _read_bounded_response(response, max_bytes)
+            try:
+                body = _read_bounded_response(response, max_bytes)
+            except SourceFetchError:
+                # Size and overall-time bounds are deterministic safeguards;
+                # retrying them would only repeat the same unsafe download.
+                raise
+            except (URLError, TimeoutError, OSError) as exc:
+                # A connection can fail after headers arrive (including
+                # Errno 9 from a closed/invalid response socket). Normalize
+                # stream failures so the bounded retry policy handles them
+                # like failures raised while opening the connection.
+                raise SourceFetchError(
+                    f"request failed while reading response: {exc}"
+                ) from exc
             return response.status, response.headers, body
 
     def _get_with_retries(self, url: str, max_bytes: int, host: str):
@@ -206,7 +219,7 @@ class PublicSiteClient:
             except SourceFetchError as exc:
                 # Size-limit and validation errors are deterministic and must
                 # not trigger another download.
-                if not str(exc).startswith("request failed:") or attempt + 1 == MAX_REQUEST_ATTEMPTS:
+                if not str(exc).startswith("request failed") or attempt + 1 == MAX_REQUEST_ATTEMPTS:
                     raise
                 delay = min(2.0, 0.5 * (2**attempt))
                 time.sleep(delay)
@@ -544,9 +557,21 @@ class _MumbaiCircularRows(HTMLParser):
 
 def _listing_date(text: str) -> str | None:
     """Extract a date displayed as catalog metadata rather than notice content."""
-    return _publication_date(text) or (
-        " ".join(match.group(1).split()) if (match := _LISTING_DATE_RE.search(text[:2_000])) else None
-    )
+    explicit = _publication_date(text)
+    if explicit:
+        return explicit
+    matches = list(_LISTING_DATE_RE.finditer(text[:2_000]))
+    if not matches:
+        return None
+    # DU notice rows often include the deadline in the title and the portal's
+    # actual posted timestamp at the end. Prefer that timestamp so a deadline
+    # is not displayed or stored as the notice's publication date.
+    timestamps = [
+        match for match in matches
+        if re.search(r",\s*\d{1,2}:\d{2}\s*[AP]M\b", match.group(1), re.IGNORECASE)
+    ]
+    selected = timestamps[-1] if timestamps else matches[0]
+    return " ".join(selected.group(1).split())
 
 
 def _pdf_text(data: bytes) -> str:

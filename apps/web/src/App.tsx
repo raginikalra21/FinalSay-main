@@ -14,6 +14,7 @@ import BenchmarkPage from './pages/reviewer/BenchmarkPage'
 import SourcesPage from './pages/admin/SourcesPage'
 import ProvenancePage from './pages/admin/ProvenancePage'
 import PublishPage from './pages/issuer/PublishPage'
+import CollegeOnboardingPage from './pages/CollegeOnboardingPage'
 
 // The landing route sends each role to its natural home screen.
 function Home() {
@@ -27,7 +28,7 @@ function Home() {
     case 'issuer':
       return <Navigate to="/issuer/publish" replace />
     default:
-      return <Navigate to="/submit" replace />
+      return <Navigate to={user.institution_id ? '/notices' : '/onboarding/college'} replace />
   }
 }
 
@@ -40,6 +41,14 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route
+            path="/onboarding/college"
+            element={
+              <ProtectedRoute roles={['student']}>
+                <CollegeOnboardingPage />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Student */}
           <Route

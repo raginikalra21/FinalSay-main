@@ -18,8 +18,8 @@ from finalsay.auth import (
     normalize_email_address,
 )
 from finalsay.db import get_db
-from finalsay.models import User
-from finalsay.schemas import Token, UserOut, UserRegister
+from finalsay.models import Institution, User
+from finalsay.schemas import StudentInstitutionUpdate, Token, UserOut, UserRegister
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -34,11 +34,24 @@ SELF_REGISTER_ROLE = "student"
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def register(payload: UserRegister, db: Session = Depends(get_db)) -> UserOut:
     email = normalize_email_address(str(payload.email))
+    institution = None
+    if payload.institution_id is not None:
+        institution = db.get(Institution, payload.institution_id)
+        if (
+            institution is None
+            or not institution.active
+            or institution.scrape_type == "fixture"
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Select an active supported college.",
+            )
     user = User(
         email=email,
         hashed_password=hash_password(payload.password),
         role=SELF_REGISTER_ROLE,
         display_name=(payload.display_name or "").strip() or None,
+        institution_id=institution.id if institution else None,
     )
     try:
         existing = db.scalar(select(User).where(func.lower(User.email) == email))
@@ -97,4 +110,32 @@ def login(
 
 @router.get("/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)) -> User:
+    return current_user
+
+
+@router.patch("/me/institution", response_model=UserOut)
+def update_student_institution(
+    payload: StudentInstitutionUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Set or change the signed-in student's default college."""
+    if current_user.role != SELF_REGISTER_ROLE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only student accounts have a personal college preference.",
+        )
+    institution = db.get(Institution, payload.institution_id)
+    if (
+        institution is None
+        or not institution.active
+        or institution.scrape_type == "fixture"
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Select an active supported college.",
+        )
+    current_user.institution_id = institution.id
+    db.commit()
+    db.refresh(current_user)
     return current_user

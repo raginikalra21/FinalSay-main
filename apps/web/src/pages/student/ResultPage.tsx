@@ -7,7 +7,7 @@ import type {
   NoticeDetail,
   VerifyResponse,
 } from '../../api/types'
-import { loadResult } from '../../api/resultCache'
+import { loadResult, saveResult } from '../../api/resultCache'
 import LabelBadge from '../../components/LabelBadge'
 
 // The result / evidence-trail screen for a submission: shows the relationship
@@ -29,6 +29,8 @@ export default function ResultPage() {
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
+    const cachedOutcome = loadResult(submissionId)
+    setOutcome(cachedOutcome)
     try {
       const [sub, cands] = await Promise.all([
         api.get<NoticeDetail>(`/notices/${submissionId}`),
@@ -36,6 +38,17 @@ export default function ResultPage() {
       ])
       setSubmission(sub.data)
       setCandidates(cands.data)
+      try {
+        const persisted = await api.get<ComparisonResponse>(
+          `/ingest/submissions/${submissionId}/result`,
+        )
+        setOutcome(persisted.data)
+        saveResult(persisted.data)
+      } catch (err) {
+        // Keep the immediate local result visible when the persisted-result
+        // endpoint is temporarily unavailable or an older backend is running.
+        if (!cachedOutcome) setError(errorMessage(err))
+      }
     } catch (err) {
       setError(errorMessage(err))
     } finally {
@@ -45,7 +58,6 @@ export default function ResultPage() {
 
   useEffect(() => {
     void load()
-    setOutcome(loadResult(submissionId))
   }, [load, submissionId])
 
   const runVerify = async (tamper: boolean) => {
@@ -74,6 +86,21 @@ export default function ResultPage() {
   if (!submission) return <p className="muted">No submission found.</p>
 
   const topCandidate = candidates[0]
+  const matchedCandidate = candidates.find(
+    (item) => item.notice.id === outcome?.candidate_id,
+  )?.notice ?? topCandidate?.notice
+  const hasExtractedSourceDocument = Boolean(
+    outcome?.candidate_supplemental_extractions?.some(
+      (item) => item.extraction_quality === 'extracted' && item.extracted_text.trim(),
+    ),
+  )
+  const listingOnlyMatch = Boolean(
+    matchedCandidate &&
+      !hasExtractedSourceDocument &&
+      (['listing_only', 'unextractable'].includes(matchedCandidate.extraction_quality) ||
+        (matchedCandidate.extraction_quality === 'unknown' &&
+          /official listing\s*:/i.test(outcome?.candidate_text ?? ''))),
+  )
   const integrityMessage = (status: VerifyResponse['integrity_status']) => {
     switch (status) {
       case 'VERIFIED': return 'Public Polygon Amoy anchor and notice integrity verified.'
@@ -136,6 +163,16 @@ export default function ResultPage() {
           </p>
         ) : (
           <p className="muted">No candidate official notice was found for this submission.</p>
+        )}
+        {listingOnlyMatch && (
+          <div className="banner" role="status">
+            <strong>Official document text is unavailable for this match.</strong>
+            <p>
+              FinalSay found a related portal listing, but could not verify its PDF or
+              attachment. Any relationship that depends on changed dates is sent for
+              review instead of being presented as confirmed.
+            </p>
+          </div>
         )}
       </div>
 

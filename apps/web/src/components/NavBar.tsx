@@ -1,5 +1,8 @@
+import { useEffect, useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { api, errorMessage } from '../api/client'
+import type { InstitutionChoice } from '../api/types'
 import type { Role } from '../api/types'
 
 interface NavItem {
@@ -21,8 +24,36 @@ const NAV: NavItem[] = [
 ]
 
 export default function NavBar() {
-  const { user, logout } = useAuth()
+  const { user, logout, updateInstitution } = useAuth()
   const navigate = useNavigate()
+  const [institutions, setInstitutions] = useState<InstitutionChoice[]>([])
+  const [campusBusy, setCampusBusy] = useState(false)
+  const [campusError, setCampusError] = useState('')
+
+  useEffect(() => {
+    if (user?.role !== 'student') {
+      setInstitutions([])
+      return
+    }
+    api
+      .get<InstitutionChoice[]>('/institutions')
+      .then((res) => setInstitutions(res.data))
+      .catch(() => setInstitutions([]))
+  }, [user?.role])
+
+  const onInstitutionChange = async (institutionId: number) => {
+    if (!institutionId || institutionId === user?.institution_id || campusBusy) return
+    setCampusBusy(true)
+    setCampusError('')
+    try {
+      await updateInstitution(institutionId)
+      navigate('/notices')
+    } catch (err) {
+      setCampusError(errorMessage(err))
+    } finally {
+      setCampusBusy(false)
+    }
+  }
 
   const onLogout = () => {
     logout()
@@ -33,7 +64,9 @@ export default function NavBar() {
     <header className="navbar">
       <div className="nav-inner">
         <Link to="/" className="brand">
-          FinalSay
+          <span className="brand-mark" aria-hidden="true">F</span>
+          <span className="brand-wordmark">FinalSay</span>
+          <span className="brand-caption">Notice intelligence</span>
         </Link>
         <nav className="nav-links">
           {user &&
@@ -46,6 +79,23 @@ export default function NavBar() {
         <div className="nav-user">
           {user ? (
             <>
+              {user.role === 'student' && user.institution_id !== null && (
+                <div className="campus-switcher">
+                  <span className="campus-caption">My college</span>
+                  <select
+                    aria-label="Change my college"
+                    value={user.institution_id}
+                    disabled={campusBusy}
+                    onChange={(event) => void onInstitutionChange(Number(event.target.value))}
+                  >
+                    {institutions.map((institution) => (
+                      <option key={institution.id} value={institution.id}>
+                        {institution.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <span className="muted">
                 {user.display_name || user.email} ({user.role})
               </span>
@@ -64,6 +114,7 @@ export default function NavBar() {
             </>
           )}
         </div>
+        {campusError && <span className="nav-campus-error" role="alert">{campusError}</span>}
       </div>
     </header>
   )

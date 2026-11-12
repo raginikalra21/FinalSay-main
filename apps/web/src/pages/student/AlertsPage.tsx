@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, errorMessage } from '../../api/client'
-import type { NoticeSummary } from '../../api/types'
+import type { StudentNoticeItem, StudentNoticeFeed } from '../../api/types'
 
 // Alerts screen — NON-INTERACTIVE placeholder.
 //
@@ -12,14 +12,14 @@ import type { NoticeSummary } from '../../api/types'
 // most recent official notices (real data from GET /api/notices) so the intent of
 // the screen is visible without pretending the alerts feature exists.
 export default function AlertsPage() {
-  const [notices, setNotices] = useState<NoticeSummary[]>([])
+  const [notices, setNotices] = useState<StudentNoticeItem[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     api
-      .get<NoticeSummary[]>('/notices', { params: { kind: 'official' } })
-      .then((res) => setNotices(res.data.slice(0, 10)))
+      .get<StudentNoticeFeed>('/notices/student/feed', { params: { page_size: 10 } })
+      .then((res) => setNotices(res.data.items))
       .catch((err) => setError(errorMessage(err)))
       .finally(() => setLoading(false))
   }, [])
@@ -36,15 +36,14 @@ export default function AlertsPage() {
           this screen.
         </p>
         <p className="muted">
-          The read-only list below is a preview of the latest official notices
-          (real data from <code>GET /api/notices</code>) to illustrate what an
-          alerts feed would eventually draw from. It is not a real alerts feature
-          and does not filter to any subscription.
+          The read-only list below is a preview of your college’s latest official
+          notices. It is not a real alerts feature and does not filter to any
+          subscription.
         </p>
       </div>
 
       <div className="card">
-        <h2>Recent official notices (read-only preview)</h2>
+        <h2>Recent notices from your college</h2>
         {loading ? (
           <p className="muted">Loading…</p>
         ) : notices.length === 0 ? (
@@ -54,8 +53,8 @@ export default function AlertsPage() {
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Issuer</th>
-                <th>Date</th>
+                <th>Notice</th>
+                <th>Publication date</th>
                 <th>Audience</th>
               </tr>
             </thead>
@@ -63,8 +62,8 @@ export default function AlertsPage() {
               {notices.map((n) => (
                 <tr key={n.id}>
                   <td>{n.id}</td>
-                  <td>{n.issuer ?? '—'}</td>
-                  <td>{n.notice_date ?? '—'}</td>
+                  <td>{n.title ?? n.issuer ?? 'Official notice'}</td>
+                  <td>{n.published_date ?? 'Date unavailable'}</td>
                   <td>{n.audience ?? '—'}</td>
                 </tr>
               ))}
